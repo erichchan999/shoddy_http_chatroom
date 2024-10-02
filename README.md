@@ -1,4 +1,4 @@
-# Chatroom Server Using Simple Reliable UDP
+# Chatroom client server model over a shoddy application layer protocol
 A chatroom messaging client server model that communicates via TCP. It uses its own application layer protocol based off of HTTP, but only supports variable content length scatter-gathering of messages. Client post messages to the server and the server saves it in a .txt file. Each client connection spawns a new thread in the server to handle that connection. Clients can also send files to each other through P2P via UDP.
 
 This project exists mainly as practice/sandboxing for me to write my own application layer protocol.
