@@ -1,25 +1,32 @@
-'''Client executable. Runs on Python version 3'''
+'''
+Client executable
+'''
 
 import sys
 import os
+import socket
+import threading
+import queue
+
+import clientSettings
 
 currentDir = os.path.dirname(os.path.realpath(__file__))
 parentDir = os.path.dirname(currentDir)
 sys.path.append(parentDir)
 
-import socket
-import threading
-import queue
-import clientSettings
 from protocol.protocol import Protocol
 
-'''Initialise client settings from program args'''
-def initialiseClientSettings():
-    clientSettings.serverName = sys.argv[1]
-    clientSettings.serverPort = int(sys.argv[2])
-    clientSettings.clientUDPPort = int(sys.argv[3])
+'''
+Initialise client settings from program args
+'''
+def initialiseClientSettings(serverName, serverPort, clientUDPPort):
+    clientSettings.serverName = serverName
+    clientSettings.serverPort = serverPort
+    clientSettings.clientUDPPort = clientUDPPort
 
-'''Send login info to server'''
+'''
+Send login info to server
+'''
 def login():
     username = input('Username: ')
     password = input('Password: ')
@@ -39,9 +46,11 @@ def login():
     else:
         return False
 
-'''Extract address for username from ATU response from server'''
-def getATUAddr(username):
-    for line in ATU.splitlines():
+'''
+Extract address for username from active users (ATU) response from server
+'''
+def getAtuAddr(username):
+    for line in atu.splitlines():
         lineSplit = line.split(', ')
         
         lineUsername = lineSplit[0]
@@ -51,24 +60,28 @@ def getATUAddr(username):
             lineAddrPort = lineSplit[2]
             return lineAddrName, int(lineAddrPort)
 
-'''Upload file to username'''
-def upload(addr, username, filename):
-    updSocket.sendto(f'{clientUsername}; {filename}'.encode('utf-8'), addr)
+'''
+Upload file via UDP packets to username
+'''
+def upload(addr, filename):
+    udpSocket.sendto(f'{clientUsername}; {filename}'.encode('utf-8'), addr)
     
     with open(f'{filename}', 'rb') as file:
-        data = file.read(updPacketSize)
+        data = file.read(udpPacketSize)
         while data:
-            updSocket.sendto(data, addr)
-            data = file.read(updPacketSize)
+            udpSocket.sendto(data, addr)
+            data = file.read(udpPacketSize)
 
     print(f'\n{filename} has been uploaded.\nEnter one of the following commands (MSG, DLT, EDT, RDM, ATU, OUT, UPD): ', end='')
 
-'''Receive UDP packets and demultiplex based on address'''
+'''
+Receive UDP packets and demultiplex based on address
+'''
 def fileRecv():
     while True:
-        # Try and except block to exit thread when client logs out
+        # Exit thread when client logs out
         try:
-            data, addr = updSocket.recvfrom(updPacketSize)
+            data, addr = udpSocket.recvfrom(udpPacketSize)
         except socket.timeout:
             if not loggedIn:
                 return
@@ -96,7 +109,9 @@ def fileRecv():
         else:
             recvBufferDict[addr].put(data)
 
-'''Read data from buffer and write into file'''
+'''
+Read data from buffer and write into file
+'''
 def writeData(addr, username, filename):
     if username == '' or filename == '':
         print('Failed to receive username or filename properly')
@@ -119,82 +134,87 @@ def writeData(addr, username, filename):
     print(f'\nReceived {filename} from {username}.\nEnter one of the following commands (MSG, DLT, EDT, RDM, ATU, OUT, UPD): ', end='')
     
 
-ATU = ''
+atu = ''
 loggedIn = False
 clientUsername = ''
 recvBufferLock = threading.Lock()
 recvBufferDict = {}
 recvBufferTimeout = 4
-updPacketSize = 1024
+udpPacketSize = 1024
 
-initialiseClientSettings()
+if __name__ == '__main__':
+    if len(sys.argv) != 4:
+        print('Usage: python client.py <server_name> <server_port> <client_UDP_port>')
+        sys.exit()
 
-# Start server TCP socket
-clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
-clientSocket.connect((clientSettings.serverName, clientSettings.serverPort))
+    initialiseClientSettings(sys.argv[1], int(sys.argv[2]), int(sys.argv[3]))
 
-clientConnection = Protocol(clientSocket, clientSettings.serverName, clientSettings.serverPort)
+    # Start server TCP socket
+    clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
+    clientSocket.connect((clientSettings.serverName, clientSettings.serverPort))
 
-while True:
-    if login():
-        loggedIn = True
-        break
+    clientConnection = Protocol(clientSocket, clientSettings.serverName, clientSettings.serverPort)
 
-# Start P2P UDP socket
-updSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-updSocket.bind(('localhost', clientSettings.clientUDPPort))
-updSocket.settimeout(2)
-
-# Start UDP file receiving thread
-fileRecvThread = threading.Thread(name='FileRecv', target=fileRecv)
-fileRecvThread.loggedIn = True
-fileRecvThread.start()
-
-# Send listening UDP Port to server
-clientConnection.sendMessage(str(clientSettings.clientUDPPort))
-
-while True:
-    request = input('Enter one of the following commands (MSG, DLT, EDT, RDM, ATU, OUT, UPD): ')
-    
-    # Extract commnand and args from request
-    requestPart = request.partition('; ')
-
-    command = requestPart[0]
-    args = tuple(requestPart[2].split('; '))
-
-    if command == 'UPD':
-        if len(args) != 2:
-            print('Error. Invalid command!')
-            continue
-
-        username =  args[0]
-        filename = args[1]
-
-        addr = getATUAddr(username)
-
-        if not addr:
-            print(f'{username} is offline')
-            continue
-
-        uploadThread = threading.Thread(target=upload, name='Upload', args=(addr, username, filename), daemon=True)
-        uploadThread.start()
-    else:
-        clientConnection.sendMessage(request)
-        
-        response = clientConnection.recvMessage()
-
-        if command == 'OUT':
-            clientSocket.close()
-
-            loggedIn = False
-
-            fileRecvThread.join()
-            updSocket.close()
-
-            print(response)
+    while True:
+        if login():
+            loggedIn = True
             break
-        elif command == 'ATU':
-            ATU = response
-            print(response)
+
+    # Start P2P UDP socket
+    udpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udpSocket.bind(('localhost', clientSettings.clientUDPPort))
+    udpSocket.settimeout(2)
+
+    # Start UDP file receiving thread
+    fileRecvThread = threading.Thread(name='FileRecv', target=fileRecv)
+    fileRecvThread.loggedIn = True
+    fileRecvThread.start()
+
+    # Send listening UDP Port to server
+    clientConnection.sendMessage(str(clientSettings.clientUDPPort))
+
+    while True:
+        request = input('Enter one of the following commands (MSG, DLT, EDT, RDM, ATU, OUT, UPD): ')
+        
+        # Extract commnand and args from request
+        requestPart = request.partition('; ')
+
+        command = requestPart[0]
+        args = tuple(requestPart[2].split('; '))
+
+        if command == 'UPD':
+            if len(args) != 2:
+                print('Error. Invalid command!')
+                continue
+
+            username = args[0]
+            filename = args[1]
+
+            addr = getAtuAddr(username)
+
+            if not addr:
+                print(f'{username} is offline')
+                continue
+
+            # Start file upload thread, which sends file via UDP packets. It's a daemon thread because
+            # we don't care about this thread ending if the client logs out/crashes.
+            uploadThread = threading.Thread(target=upload, name='UploadThread', args=(addr, filename), daemon=True)
+            uploadThread.start()
         else:
+            clientConnection.sendMessage(request)
+            
+            response = clientConnection.recvMessage()
             print(response)
+
+            if command == 'OUT':
+                clientSocket.close()
+
+                loggedIn = False
+
+                fileRecvThread.join()
+                udpSocket.close()
+                break
+            elif command == 'ATU':
+                atu = response
+            else:
+                pass

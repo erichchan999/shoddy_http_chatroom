@@ -1,26 +1,36 @@
-'''Server side connection class. Each new TCP connection is handled by an instance of this class'''
+'''
+Server side connection class. Each new client connection is handled by an instance of this class.
+'''
 
+import os
+import sys
 import datetime
 import threading
 from inspect import signature
+
 import threadLock
-from protocol.protocol import Protocol
 import database
 import serverSettings
 
+currentDir = os.path.dirname(os.path.realpath(__file__))
+parentDir = os.path.dirname(currentDir)
+sys.path.append(parentDir)
+
+from protocol.protocol import Protocol
 
 class ServerConnection(Protocol):
     def __init__(self, connectionSocket, clientName, clientPort):
         super().__init__(connectionSocket, clientName, clientPort)
+        self.connectionSocket = connectionSocket
         self.username = ''
         self.clientUDPPort = 0
         self._commands = {
-            'MSG': self._msg, 
-            'DLT': self._dlt, 
-            'EDT': self._edt, 
-            'RDM': self._rdm, 
-            'ATU': self._atu, 
-            'OUT': self._logout,
+            'MSG': self._msg, # post message, MSG; <message>
+            'DLT': self._dlt, # delete message, DLT; <message number>; <timestamp>
+            'EDT': self._edt, # edit message, EDT; <message number>; <timestamp>; <new message>
+            'RDM': self._rdm, # read messages, RDM; <timestamp>
+            'ATU': self._atu, # list active users, ATU
+            'OUT': self._logout, # logout, OUT
         }
 
     def main(self):
@@ -33,6 +43,7 @@ class ServerConnection(Protocol):
             self._doCommand(command, args)
 
             if command == 'OUT':
+                self.connectionSocket.close()
                 return
 
     def _loginLoop(self):
@@ -75,15 +86,21 @@ class ServerConnection(Protocol):
         else:
             return False
 
-    '''Login attempts remaining'''
+    '''
+    Login attempts remaining
+    '''
     def _attemptsRemaining(self, username):
         return serverSettings.allowedConsecutiveFailedPasswordAttempts - database.clientsLogin[username]['loginAttempts']
 
-    '''Begin timer to run a function that ends the login timeout'''
+    '''
+    Begin timer to run a function that ends the login timeout
+    '''
     def _beginEndTimeoutTimer(self, username):
         threading.Timer(10.0, self._endTimeout, args=[username]).start()
 
-    '''End login timeout'''
+    '''
+    End login timeout
+    '''
     def _endTimeout(self, username):
         with threadLock.loginDataLock:
             database.clientsLogin[username]['loginAttempts'] = 0
@@ -92,7 +109,9 @@ class ServerConnection(Protocol):
         clientUDPPort = int(self.recvMessage())
         self.clientUDPPort = clientUDPPort
     
-    '''Update userlog with new login entry'''
+    '''
+    Update userlog with new login entry
+    '''
     def _userlogNewLogin(self):
         with threadLock.userlogLock:
             with open('userlog.txt', 'a') as userlog:
@@ -371,9 +390,3 @@ class ServerConnection(Protocol):
 
     def _stripTime(self, timeStr):
         return datetime.datetime.strptime(timeStr, '%d %b %Y %H:%M:%S')
-    
-
-
-
-
-        

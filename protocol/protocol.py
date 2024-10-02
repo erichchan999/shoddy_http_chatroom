@@ -1,8 +1,9 @@
 '''
-Application layer protocol for sending and receiving messages. 
+Application layer protocol for sending and receiving messages via TCP.
+This is a simple protocol that sends messages with a header and a payload.
+It is meant to be simpler HTTP clone.
 Each message has the format 'Content-Length: {size of body in bytes}\r\nPAYLOAD DATA...'.
 '''
-import socket
 
 class Protocol:
     def __init__(self, socket, addrName, addrPort):
@@ -11,7 +12,9 @@ class Protocol:
         self.addrPort = addrPort
         self._recvCarryOverData = ''
     
-    '''Send message via TCP'''
+    '''
+    Send message via TCP
+    '''
     def sendMessage(self, message):
         messageBytes = message.encode('utf-8')
 
@@ -24,8 +27,9 @@ class Protocol:
         self.socket.sendall(headerBytes)
         self.socket.sendall(messageBytes)
 
-
-    '''Receive message via TCP'''
+    '''
+    Receive message via TCP
+    '''
     def recvMessage(self):        
         messageStart = []
 

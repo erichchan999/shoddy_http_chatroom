@@ -1,0 +1,5 @@
+.DS_Store
+.vscode/
+*__pycache__/
+server/messagelog.txt
+server/userlog.txt

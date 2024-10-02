@@ -1,4 +1,6 @@
-'''Thread lock objects'''
+'''
+Thread lock objects
+'''
 
 import threading
 
